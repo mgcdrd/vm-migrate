@@ -1,0 +1,20 @@
+---
+collections:
+  - name: mgcdrd.infrabase
+    source: https://github.com/mgcdrd/infrabase.git
+    type: git
+    version: v0.21.0
+
+  - name: mgcdrd.infrasvc
+    source: https://github.com/mgcdrd/infrasvc.git
+    type: git
+    version: v0.17.0
+
+  - name: theforeman.foreman
+    version: ">=5.0.0"
+
+  - name: community.proxmox
+    version: ">=2.0.0"
+
+  - name: community.hashi_vault
+    version: ">=6.0.0"

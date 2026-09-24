@@ -1,0 +1,29 @@
+---
+# Copy to inventory/host_vars/<hostname>.yml (matching the hostname as
+# defined in ../../../../inventory-common/hosts.yml) to migrate that VM.
+#
+# Run:
+#   ansible-playbook site.yml --limit <hostname>
+#
+# Each phase in site.yml only runs if its trigger var below is set, so
+# define only what this run actually needs to change.
+
+# ---- phpIPAM + Foreman phases (both gated on this) ----
+vm_migrate_new_ip: 10.0.0.50
+
+# phpIPAM target subnet — must already exist in phpIPAM (this deployment
+# only ever assigns an address into an existing subnet, never creates
+# the production subnet itself).
+vm_migrate_phpipam_subnet_network: "10.0.0.0"
+vm_migrate_phpipam_subnet_mask: 25
+vm_migrate_phpipam_section: "Lab" # existing phpIPAM section name
+
+# Foreman target subnet — must already exist in Foreman (Infrastructure ->
+# Subnets). Confirmed 2026-09-02: this lab's Foreman has exactly one,
+# named "Lab" — check yours with GET /api/subnets before setting this.
+vm_migrate_foreman_subnet: "Lab"
+
+# ---- Proxmox NIC phase ----
+vm_migrate_proxmox_bridge: vmbr0
+# vm_migrate_proxmox_interface: net0   # default; override for multi-NIC VMs
+# vm_migrate_proxmox_vlan_tag: 100     # omit entirely for an untagged bridge

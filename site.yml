@@ -1,0 +1,80 @@
+---
+# ============================================================
+# VM network migration: build network -> production subnet.
+#
+# Reassigns a VM's IP in phpIPAM, updates its Foreman host record, and
+# changes its Proxmox NIC bridge/VLAN -- entirely from the controller, no
+# SSH connection to the VM at any point. That matters because the whole
+# point of this playbook is to survive the moment the VM's old network
+# path goes away (the NIC/VLAN phase can cut it off mid-run).
+#
+# Ad hoc, one VM per run:
+#   ansible-playbook site.yml --limit <hostname>
+#
+# Define vm_migrate_* for the VM in inventory/host_vars/<hostname>.yml
+# (see host_vars/example.yml.example), or pass via -e for a one-off run.
+# Each phase only runs if its trigger var is set -- an unscoped run is a
+# no-op everywhere except a host that actually defines vm_migrate_new_ip.
+#
+# hosts: all + delegate_to: localhost on every task (not hosts: localhost
+# directly) so --limit and per-VM host_vars work the normal Ansible way,
+# while every actual API call still runs from the controller.
+#
+# STATUS (2026-09-02): phpIPAM, Foreman, and Proxmox NIC phases are wired
+# and use only already-proven roles/API calls. The guest-side network push
+# (via mgcdrd.infrabase.proxmox_guest_exec, pushing a netplan/nmcli config
+# matching vm_migrate_new_ip) is NOT wired in yet -- see README "Status"
+# for what's still needed before this replaces the manual console step.
+# ============================================================
+
+- name: VM network migration
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: vm-migrate - assign IP in phpIPAM
+      ansible.builtin.include_role:
+        name: mgcdrd.infrasvc.phpipam_config
+      delegate_to: localhost
+      vars:
+        phpipam_config_url:      "{{ vm_migrate_phpipam_url }}"
+        phpipam_config_app_id:   "{{ vm_migrate_phpipam_app_id }}"
+        phpipam_config_username: "{{ vm_migrate_phpipam_username }}"
+        phpipam_config_password: "{{ vm_migrate_phpipam_password }}"
+        phpipam_config_subnets:
+          - subnet:  "{{ vm_migrate_phpipam_subnet_network }}"
+            mask:    "{{ vm_migrate_phpipam_subnet_mask }}"
+            section: "{{ vm_migrate_phpipam_section }}"
+            addresses:
+              - ip:       "{{ vm_migrate_new_ip }}"
+                hostname: "{{ inventory_hostname }}"
+                tag: 2 # Used
+      when: vm_migrate_new_ip is defined
+
+    - name: vm-migrate - update Foreman host record
+      ansible.builtin.include_role:
+        name: mgcdrd.infrasvc.foreman_host_network
+      vars:
+        foreman_host_network_url:      "{{ vm_migrate_foreman_url }}"
+        foreman_host_network_username: "{{ vm_migrate_foreman_username }}"
+        foreman_host_network_password: "{{ vm_migrate_foreman_password }}"
+        foreman_host_network_host:     "{{ inventory_hostname }}"
+        foreman_host_network_subnet:   "{{ vm_migrate_foreman_subnet }}"
+        foreman_host_network_ip:       "{{ vm_migrate_new_ip }}"
+      when: vm_migrate_new_ip is defined
+
+    - name: vm-migrate - change Proxmox NIC bridge/VLAN
+      ansible.builtin.include_role:
+        name: mgcdrd.infrabase.proxmox_nic
+      vars:
+        proxmox_api_host:    "{{ vm_migrate_pve_node }}.{{ domain }}"
+        proxmox_nic_vm_name: "{{ inventory_hostname }}"
+        proxmox_nic_interfaces:
+          - interface: "{{ vm_migrate_proxmox_interface | default('net0') }}"
+            bridge:    "{{ vm_migrate_proxmox_bridge }}"
+            tag:       "{{ vm_migrate_proxmox_vlan_tag | default(omit) }}"
+      when: vm_migrate_proxmox_bridge is defined
+
+    # ---- Guest-side network push: not wired in yet ----
+    # Will use mgcdrd.infrabase.proxmox_guest_exec to write and apply a
+    # netplan (Debian) or nmcli (RedHat) config matching vm_migrate_new_ip
+    # once the exact per-OS-family approach is settled -- see README.

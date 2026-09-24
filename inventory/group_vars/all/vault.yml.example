@@ -1,0 +1,35 @@
+---
+# All secrets resolved at runtime from HashiCorp Vault.
+# Set VAULT_ADDR and VAULT_TOKEN (or use approle) before running.
+#
+# Copy this file to vault.yml and it will work once the Vault paths below
+# are populated (vault_kv_infra_mount and vault_kv_env come from
+# ../../../inventory-common). vault.yml is gitignored — never commit it.
+
+# ---- phpIPAM ----
+# New path — nothing has populated this yet as of 2026-09-02. Create a
+# dedicated phpIPAM user for the "ansible" API application (Administration
+# > API), not your own login, and store its credentials here.
+vm_migrate_phpipam_username: "{{ lookup('community.hashi_vault.vault_kv2_get', vault_kv_env + '/phpipam/api', engine_mount_point=vault_kv_infra_mount, url=vault_addr).secret.username }}"
+vm_migrate_phpipam_password: "{{ lookup('community.hashi_vault.vault_kv2_get', vault_kv_env + '/phpipam/api', engine_mount_point=vault_kv_infra_mount, url=vault_addr).secret.password }}"
+
+# ---- Foreman ----
+# New path — nothing has populated this yet as of 2026-09-02. Needs a
+# dedicated identity scoped to Hosts edit. Do NOT reuse the read-only
+# svc-ansible-inventory identity (see ../../../inventory-common/
+# foreman-inventory-env.sh — that one is intentionally Viewer-scoped) or
+# an admin account.
+vm_migrate_foreman_username: "{{ lookup('community.hashi_vault.vault_kv2_get', vault_kv_env + '/foreman', engine_mount_point=vault_kv_infra_mount, url=vault_addr).secret.write_username }}"
+vm_migrate_foreman_password: "{{ lookup('community.hashi_vault.vault_kv2_get', vault_kv_env + '/foreman', engine_mount_point=vault_kv_infra_mount, url=vault_addr).secret.write_password }}"
+
+# ---- ProxMox ----
+# API TOKEN AUTH IS REQUIRED for this deployment, not just recommended —
+# the guest-agent-exec phase (mgcdrd.infrabase.proxmox_guest_exec, once
+# wired in) hard-asserts on it, since ansible.builtin.uri can't do PVE's
+# login-ticket + CSRF flow that password auth needs. Reuses the same
+# infra/<env>/proxmox/api_token secret deployments/proxmox-vm-manage's
+# vault.yml.example documents minting (Datacenter -> Permissions -> API
+# Tokens, with at least VM.Config.Network and VM.Monitor on the relevant
+# path) — populate it there if it doesn't exist yet.
+proxmox_api_token_id:     "{{ lookup('community.hashi_vault.vault_kv2_get', vault_kv_env + '/proxmox/api_token', engine_mount_point=vault_kv_infra_mount, url=vault_addr).secret.token_id }}"
+proxmox_api_token_secret: "{{ lookup('community.hashi_vault.vault_kv2_get', vault_kv_env + '/proxmox/api_token', engine_mount_point=vault_kv_infra_mount, url=vault_addr).secret.token_secret }}"

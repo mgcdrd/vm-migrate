@@ -1,0 +1,13 @@
+CLAUDE.md
+*.pyc
+__pycache__/
+.venv/
+.env
+*.retry
+vault_pass*
+collections/*
+!collections/requirements.yml
+
+# Environment-specific files — copy from *.example and populate locally
+inventory/group_vars/*/vault.yml
+inventory/group_vars/*/env.yml
