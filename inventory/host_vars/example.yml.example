@@ -27,3 +27,27 @@ vm_migrate_foreman_subnet: "Lab"
 vm_migrate_proxmox_bridge: vmbr0
 # vm_migrate_proxmox_interface: net0   # default; override for multi-NIC VMs
 # vm_migrate_proxmox_vlan_tag: 100     # omit entirely for an untagged bridge
+
+# ---- Guest-side network push (opt-in, its own trigger) ----
+# Pushes vm_migrate_new_ip into the guest itself via nmcli, over the QEMU
+# guest-agent channel (no SSH). Runs after the Proxmox NIC phase above.
+# A mistake here can strand the VM with no network path except the
+# Proxmox console — this must be turned on explicitly, it is never
+# implied by vm_migrate_new_ip alone. See README "Guest-side network push".
+# vm_migrate_guest_network_push: true
+
+# Required whenever vm_migrate_guest_network_push is true. Must match
+# ansible_facts['os_family'] spelling exactly — this playbook never
+# gathers facts, so there's nothing to infer it from.
+# vm_migrate_guest_os_family: Debian   # or: RedHat
+
+# Required whenever vm_migrate_guest_network_push is true. The guest's
+# IPv4 prefix length reuses vm_migrate_phpipam_subnet_mask above — no
+# separate var for it.
+# vm_migrate_new_gateway: 10.0.0.1
+# vm_migrate_new_dns: [10.0.0.53]
+
+# Optional. Only needed if the guest has more than one active nmcli
+# connection at push time — auto-detected otherwise via
+# `nmcli connection show --active`.
+# vm_migrate_guest_connection_name: "Wired connection 1"

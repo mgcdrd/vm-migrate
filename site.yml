@@ -20,11 +20,17 @@
 # directly) so --limit and per-VM host_vars work the normal Ansible way,
 # while every actual API call still runs from the controller.
 #
-# STATUS (2026-09-02): phpIPAM, Foreman, and Proxmox NIC phases are wired
-# and use only already-proven roles/API calls. The guest-side network push
-# (via mgcdrd.infrabase.proxmox_guest_exec, pushing a netplan/nmcli config
-# matching vm_migrate_new_ip) is NOT wired in yet -- see README "Status"
-# for what's still needed before this replaces the manual console step.
+# STATUS (2026-09-28): phpIPAM, Foreman, Proxmox NIC, and the guest-side
+# network push are all wired. The guest push (via
+# mgcdrd.infrabase.proxmox_guest_exec) uses nmcli for both Debian and
+# RedHat guests -- nmcli is the only proven house idiom for this
+# (mgcdrd.infrabase.network_interfaces), netplan does not exist anywhere
+# in this repo. It's opt-in per host via vm_migrate_guest_network_push,
+# separate from vm_migrate_new_ip -- unlike the API-only phases above, a
+# mistake here can strand the VM with no network path except the Proxmox
+# console, and there is no automatic rollback if it fails partway. See
+# README "Guest-side network push" for the full var reference and
+# failure story before turning this on for a real VM.
 # ============================================================
 
 - name: VM network migration
@@ -32,7 +38,7 @@
   gather_facts: false
   tasks:
     - name: vm-migrate - assign IP in phpIPAM
-      ansible.builtin.include_role:
+      ansible.builtin.import_role:
         name: mgcdrd.infrasvc.phpipam_config
       delegate_to: localhost
       vars:
@@ -51,7 +57,7 @@
       when: vm_migrate_new_ip is defined
 
     - name: vm-migrate - update Foreman host record
-      ansible.builtin.include_role:
+      ansible.builtin.import_role:
         name: mgcdrd.infrasvc.foreman_host_network
       vars:
         foreman_host_network_url:      "{{ vm_migrate_foreman_url }}"
@@ -63,7 +69,7 @@
       when: vm_migrate_new_ip is defined
 
     - name: vm-migrate - change Proxmox NIC bridge/VLAN
-      ansible.builtin.include_role:
+      ansible.builtin.import_role:
         name: mgcdrd.infrabase.proxmox_nic
       vars:
         proxmox_api_host:    "{{ vm_migrate_pve_node }}.{{ domain }}"
@@ -74,7 +80,244 @@
             tag:       "{{ vm_migrate_proxmox_vlan_tag | default(omit) }}"
       when: vm_migrate_proxmox_bridge is defined
 
-    # ---- Guest-side network push: not wired in yet ----
-    # Will use mgcdrd.infrabase.proxmox_guest_exec to write and apply a
-    # netplan (Debian) or nmcli (RedHat) config matching vm_migrate_new_ip
-    # once the exact per-OS-family approach is settled -- see README.
+    # ---- Guest-side network push ----
+    # Pushes vm_migrate_new_ip into the guest itself via nmcli, over the
+    # QEMU guest-agent channel (no SSH) -- runs after the NIC/VLAN change
+    # above, which is the point where the guest's old network path goes
+    # away. Opt-in on its own trigger var, not implied by vm_migrate_new_ip
+    # alone -- see README "Guest-side network push".
+
+    - name: vm-migrate - fail if guest network push is requested without its required vars
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - vm_migrate_new_ip is defined
+          - vm_migrate_new_gateway is defined
+          - vm_migrate_new_dns is defined
+          - vm_migrate_guest_os_family is defined
+          - vm_migrate_guest_os_family in ['Debian', 'RedHat']
+        fail_msg: >-
+          vm_migrate_guest_network_push is true but one or more required
+          vars are missing: vm_migrate_new_ip, vm_migrate_new_gateway,
+          vm_migrate_new_dns, vm_migrate_guest_os_family (must be exactly
+          'Debian' or 'RedHat' -- this play never gathers facts, so there
+          is no ansible_facts['os_family'] to fall back on).
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - not ansible_check_mode
+
+    - name: vm-migrate - look up guest VMID/node once for the guest-exec phase
+      community.proxmox.proxmox_vm_info:
+        api_host:         "{{ vm_migrate_pve_node }}.{{ domain }}"
+        api_user:         "{{ proxmox_api_user }}"
+        api_password:     "{{ proxmox_api_password | default(omit) }}"
+        api_token_id:     "{{ proxmox_api_token_id | default(omit) }}"
+        api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
+        validate_certs:   "{{ proxmox_validate_certs }}"
+        name: "{{ inventory_hostname }}"
+      register: _vm_migrate_guest_vm_info
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - not ansible_check_mode
+
+    - name: vm-migrate - fail if guest VM not found or ambiguous in Proxmox
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - _vm_migrate_guest_vm_info.proxmox_vms | default([]) | length == 1
+        fail_msg: >-
+          Expected exactly one VM named '{{ inventory_hostname }}' in
+          Proxmox, found {{ _vm_migrate_guest_vm_info.proxmox_vms | default([]) | length }}.
+          Resolve the naming conflict in PVE, or leave
+          vm_migrate_guest_network_push unset and fall back to the manual
+          console step, before retrying.
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - not ansible_check_mode
+
+    - name: vm-migrate - set guest VMID/node facts for the guest-exec phase
+      ansible.builtin.set_fact:
+        vm_migrate_guest_vmid: "{{ _vm_migrate_guest_vm_info.proxmox_vms[0].vmid }}"
+        vm_migrate_guest_node: "{{ _vm_migrate_guest_vm_info.proxmox_vms[0].node }}"
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - not ansible_check_mode
+
+    # Debian only: Proxmox's Debian cloud-init templates ship plain
+    # ifupdown, not NetworkManager -- mirrors
+    # mgcdrd.infrabase.network_interfaces' install.yml, but as raw
+    # guest-exec commands, since there's no SSH connection here to run
+    # the apt/ini_file/systemd modules against. RedHat skips this --
+    # ships NetworkManager active already.
+
+    - name: vm-migrate - install NetworkManager on guest (Debian)
+      ansible.builtin.import_role:
+        name: mgcdrd.infrabase.proxmox_guest_exec
+      vars:
+        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
+        proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
+        proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
+        proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
+        proxmox_guest_exec_command:
+          - /usr/bin/env
+          - DEBIAN_FRONTEND=noninteractive
+          - apt-get
+          - install
+          - -y
+          - network-manager
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - vm_migrate_guest_os_family == 'Debian'
+        - not ansible_check_mode
+
+    - name: vm-migrate - let NetworkManager manage ifupdown-defined interfaces on guest (Debian)
+      ansible.builtin.import_role:
+        name: mgcdrd.infrabase.proxmox_guest_exec
+      vars:
+        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
+        proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
+        proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
+        proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
+        proxmox_guest_exec_command:
+          - /usr/bin/tee
+          - /etc/NetworkManager/conf.d/10-vm-migrate-managed.conf
+        proxmox_guest_exec_input_data: |
+          [ifupdown]
+          managed=true
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - vm_migrate_guest_os_family == 'Debian'
+        - not ansible_check_mode
+
+    - name: vm-migrate - enable and start NetworkManager on guest (Debian)
+      ansible.builtin.import_role:
+        name: mgcdrd.infrabase.proxmox_guest_exec
+      vars:
+        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
+        proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
+        proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
+        proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
+        proxmox_guest_exec_command:
+          - /usr/bin/systemctl
+          - enable
+          - --now
+          - NetworkManager
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - vm_migrate_guest_os_family == 'Debian'
+        - not ansible_check_mode
+
+    # Both OS families: discover the guest's active nmcli connection
+    # rather than assuming a name -- VM templates aren't guaranteed to
+    # name their default connection predictably.
+
+    - name: vm-migrate - query guest's active nmcli connections
+      ansible.builtin.import_role:
+        name: mgcdrd.infrabase.proxmox_guest_exec
+      vars:
+        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
+        proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
+        proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
+        proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
+        proxmox_guest_exec_command:
+          - /usr/bin/nmcli
+          - -t
+          - -f
+          - NAME,DEVICE
+          - connection
+          - show
+          - --active
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - vm_migrate_guest_connection_name is not defined
+        - not ansible_check_mode
+
+    - name: vm-migrate - parse guest's active nmcli connections
+      ansible.builtin.set_fact:
+        _vm_migrate_guest_active_conns: >-
+          {{ (proxmox_guest_exec_result['out-data'] | default('')).strip().split('\n')
+             | reject('equalto', '') | list }}
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - vm_migrate_guest_connection_name is not defined
+        - not ansible_check_mode
+
+    - name: vm-migrate - fail if guest's active connection is ambiguous
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - _vm_migrate_guest_active_conns | length == 1
+        fail_msg: >-
+          Found {{ _vm_migrate_guest_active_conns | length }} active nmcli
+          connections on {{ inventory_hostname }}
+          ({{ _vm_migrate_guest_active_conns | join(', ') }}), expected
+          exactly one. Set vm_migrate_guest_connection_name in this host's
+          host_vars to disambiguate, then retry.
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - vm_migrate_guest_connection_name is not defined
+        - not ansible_check_mode
+
+    - name: vm-migrate - set guest connection name fact
+      ansible.builtin.set_fact:
+        _vm_migrate_guest_connection_name: >-
+          {{ vm_migrate_guest_connection_name
+             | default((_vm_migrate_guest_active_conns[0].split(':')[:-1]) | join(':')) }}
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - not ansible_check_mode
+
+    - name: vm-migrate - push new IP config into guest via nmcli
+      ansible.builtin.import_role:
+        name: mgcdrd.infrabase.proxmox_guest_exec
+      vars:
+        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
+        proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
+        proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
+        proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
+        proxmox_guest_exec_command:
+          - /usr/bin/nmcli
+          - connection
+          - modify
+          - "{{ _vm_migrate_guest_connection_name }}"
+          - ipv4.method
+          - manual
+          - ipv4.addresses
+          - "{{ vm_migrate_new_ip }}/{{ vm_migrate_phpipam_subnet_mask }}"
+          - ipv4.gateway
+          - "{{ vm_migrate_new_gateway }}"
+          - ipv4.dns
+          - "{{ vm_migrate_new_dns | join(',') }}"
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - not ansible_check_mode
+
+    - name: vm-migrate - activate new IP config on guest
+      ansible.builtin.import_role:
+        name: mgcdrd.infrabase.proxmox_guest_exec
+      vars:
+        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
+        proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
+        proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
+        proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
+        proxmox_guest_exec_command:
+          - /usr/bin/nmcli
+          - connection
+          - up
+          - "{{ _vm_migrate_guest_connection_name }}"
+      delegate_to: localhost
+      when:
+        - vm_migrate_guest_network_push | default(false) | bool
+        - not ansible_check_mode
