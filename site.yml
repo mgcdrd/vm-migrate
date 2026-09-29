@@ -299,6 +299,8 @@
           - "{{ vm_migrate_new_gateway }}"
           - ipv4.dns
           - "{{ vm_migrate_new_dns | join(',') }}"
+          - ipv4.dns-search
+          - "{{ vm_migrate_new_dns_search | default([domain]) | join(',') }}"
       delegate_to: localhost
       when:
         - vm_migrate_guest_network_push | default(false) | bool

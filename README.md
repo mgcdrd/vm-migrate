@@ -122,6 +122,9 @@ Requires, in that VM's host_vars, alongside `vm_migrate_new_ip`:
   to fall back on — it has to be declared.
 - `vm_migrate_new_gateway`, `vm_migrate_new_dns` (list). The guest's IPv4
   prefix length reuses `vm_migrate_phpipam_subnet_mask`.
+- `vm_migrate_new_dns_search` (list, optional) — DNS search domain(s).
+  Defaults to `[domain]` (`inventory-common`'s env-wide domain) if unset,
+  so a short hostname like `foreman` still resolves.
 - `vm_migrate_guest_connection_name` (optional) — only needed if the
   guest has more than one active `nmcli` connection at push time.
 

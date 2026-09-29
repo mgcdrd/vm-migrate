@@ -47,6 +47,12 @@ vm_migrate_proxmox_bridge: vmbr0
 # vm_migrate_new_gateway: 10.0.0.1
 # vm_migrate_new_dns: [10.0.0.53]
 
+# Optional — DNS search domain(s). Defaults to [domain] (see
+# ../../../../inventory-common) if left unset, so a short hostname like
+# `foreman` still resolves. Override for a customer environment that
+# searches a different domain than its own AD/DNS zone.
+# vm_migrate_new_dns_search: [example.com]
+
 # Optional. Only needed if the guest has more than one active nmcli
 # connection at push time — auto-detected otherwise via
 # `nmcli connection show --active`.
