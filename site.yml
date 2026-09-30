@@ -38,7 +38,7 @@
   gather_facts: false
   tasks:
     - name: vm-migrate - assign IP in phpIPAM
-      ansible.builtin.import_role:
+      ansible.builtin.include_role:
         name: mgcdrd.infrasvc.phpipam_config
       delegate_to: localhost
       vars:
