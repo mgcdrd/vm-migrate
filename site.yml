@@ -37,24 +37,29 @@
   hosts: all
   gather_facts: false
   tasks:
+    # include_role (not import_role): phpipam_config uses include_tasks, which
+    # import_role can't resolve on ansible-core 2.14. include_role rejects
+    # delegate_to/when as task keywords there, so they sit on a block instead.
     - name: vm-migrate - assign IP in phpIPAM
-      ansible.builtin.include_role:
-        name: mgcdrd.infrasvc.phpipam_config
       delegate_to: localhost
-      vars:
-        phpipam_config_url:      "{{ vm_migrate_phpipam_url }}"
-        phpipam_config_app_id:   "{{ vm_migrate_phpipam_app_id }}"
-        phpipam_config_username: "{{ vm_migrate_phpipam_username }}"
-        phpipam_config_password: "{{ vm_migrate_phpipam_password }}"
-        phpipam_config_subnets:
-          - subnet:  "{{ vm_migrate_phpipam_subnet_network }}"
-            mask:    "{{ vm_migrate_phpipam_subnet_mask }}"
-            section: "{{ vm_migrate_phpipam_section }}"
-            addresses:
-              - ip:       "{{ vm_migrate_new_ip }}"
-                hostname: "{{ inventory_hostname }}"
-                tag: 2 # Used
       when: vm_migrate_new_ip is defined
+      block:
+        - name: vm-migrate - run phpipam_config
+          ansible.builtin.include_role:
+            name: mgcdrd.infrasvc.phpipam_config
+          vars:
+            phpipam_config_url:      "{{ vm_migrate_phpipam_url }}"
+            phpipam_config_app_id:   "{{ vm_migrate_phpipam_app_id }}"
+            phpipam_config_username: "{{ vm_migrate_phpipam_username }}"
+            phpipam_config_password: "{{ vm_migrate_phpipam_password }}"
+            phpipam_config_subnets:
+              - subnet:  "{{ vm_migrate_phpipam_subnet_network }}"
+                mask:    "{{ vm_migrate_phpipam_subnet_mask }}"
+                section: "{{ vm_migrate_phpipam_section }}"
+                addresses:
+                  - ip:       "{{ vm_migrate_new_ip }}"
+                    hostname: "{{ inventory_hostname }}"
+                    tag: 2 # Used
 
     - name: vm-migrate - update Foreman host record
       ansible.builtin.import_role:
