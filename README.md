@@ -27,8 +27,8 @@ shape as `deployments/proxmox-vm-manage`.
 
 - phpIPAM address assignment (`mgcdrd.infrasvc.phpipam_config`) — API-only
 - Foreman host record update (`mgcdrd.infrasvc.foreman_host_network`) — API-only
-- Proxmox NIC bridge/VLAN change (`mgcdrd.infrabase.proxmox_nic`) — API-only
-- Guest-side network push via `mgcdrd.infrabase.proxmox_guest_exec` and
+- Proxmox NIC bridge/VLAN change (`mgcdrd.proxmox.proxmox_nic`) — API-only
+- Guest-side network push via `mgcdrd.proxmox.proxmox_guest_exec` and
   `nmcli` — QEMU guest-agent channel, no SSH; opt-in per VM, see
   "Guest-side network push" below
 
@@ -63,11 +63,11 @@ knows which VMID/node to call the Proxmox API against.
 Checked live against this lab's Foreman: **none of its 28 hosts are
 Compute-Resource-linked** (`provision_method: build`, null
 `compute_resource_id`/`uuid` on every one) — VMs here are cloned directly
-via `mgcdrd.infrabase.proxmox_vm` against the PVE API, not through
+via `mgcdrd.proxmox.proxmox_vm` against the PVE API, not through
 Foreman's own provisioning wizard. So in this lab, `foreman_host_network`
 only keeps Foreman's own inventory record accurate — it does **not**
 change anything on the hypervisor. That's why this deployment calls
-`mgcdrd.infrabase.proxmox_nic` directly for the actual VLAN/bridge
+`mgcdrd.proxmox.proxmox_nic` directly for the actual VLAN/bridge
 change, rather than relying on Foreman to push it.
 
 If a customer environment *does* provision VMs through Foreman's
@@ -75,6 +75,53 @@ Compute Resource flow, `foreman_host_network`'s `vlan_tag` field may
 also propagate there — confirm `compute_resource_id`/`uuid` on the host
 record before relying on that path alone. See
 `mgcdrd.infrasvc.foreman_host_network`'s README for the full detail.
+
+## Variable reference
+
+Host/group topology, `domain`, `vault_addr`, and `vault_kv_*` come from `../../inventory-common`. Shared settings go in `inventory/group_vars/all/env.yml` (copy of `env.yml.example`), secrets in `vault.yml` (copy of `vault.yml.example`), and the per-VM spec in `inventory/host_vars/<hostname>.yml` (copy of `example.yml.example`). Both real files are gitignored. Each phase in `site.yml` runs only when its trigger variable is set, so define only what a run needs.
+
+### Shared (`inventory/group_vars/all/env.yml`)
+
+| Variable | Shipped value | Required | Description |
+|---|---|---|---|
+| `vm_migrate_phpipam_url` | `https://dns1.{{ domain }}` | Yes | phpIPAM URL; confirm it against your actual instance |
+| `vm_migrate_phpipam_app_id` | `ansible` | No | phpIPAM API application ID; it must exist under Administration > API first (see the `phpipam_config` role README) |
+| `vm_migrate_foreman_url` | `https://foreman.{{ domain }}` | Yes | Foreman URL |
+| `vm_migrate_pve_node` | `pve2` | Yes | PVE node whose API the run talks to; any node manages the whole cluster |
+| `proxmox_api_host` | set per task in `site.yml` from `vm_migrate_pve_node` | No | Shared connection variable every `proxmox_*` role reads |
+| `proxmox_api_user` | `root@pam` | Yes | API user; the collection has no default (mgcdrd.proxmox) |
+| `proxmox_validate_certs` | `false` | Yes | Validate the PVE API TLS certificate; the collection has no default |
+
+### Vault lookups (`inventory/group_vars/all/vault.yml.example`)
+
+Set `VAULT_ADDR` and `VAULT_TOKEN` (or use AppRole) before running. These paths are new and may not be populated yet.
+
+| Variable | Source | Required | Description |
+|---|---|---|---|
+| `vm_migrate_phpipam_username`, `vm_migrate_phpipam_password` | KV `<vault_kv_env>/phpipam/api` | For the phpIPAM phase | Dedicated phpIPAM user for the `ansible` API application, not a personal login |
+| `vm_migrate_foreman_username`, `vm_migrate_foreman_password` | KV `<vault_kv_env>/foreman`, keys `write_username`/`write_password` | For the Foreman phase | Dedicated identity scoped to Hosts edit; not the read-only inventory identity and not an admin account |
+| `proxmox_api_token_id`, `proxmox_api_token_secret` | KV `<vault_kv_env>/proxmox/api_token` | Yes | API token (`VM.Config.Network` and `VM.Monitor` on the relevant path). Required, not just recommended: the guest-exec phase asserts on it, because `uri` cannot do PVE's ticket and CSRF login |
+
+### Per VM (`inventory/host_vars/<hostname>.yml`)
+
+Run with `ansible-playbook site.yml --limit <hostname>`; the hostname must match `inventory-common/hosts.yml`.
+
+| Variable | Shipped value | Required | Description |
+|---|---|---|---|
+| `vm_migrate_new_ip` | `10.0.0.50` | Yes | New IP; triggers the phpIPAM and Foreman phases |
+| `vm_migrate_phpipam_subnet_network` | `10.0.0.0` | For the phpIPAM phase | Network of the target phpIPAM subnet; it must already exist, this deployment only assigns an address into it |
+| `vm_migrate_phpipam_subnet_mask` | `25` | For the phpIPAM phase | Prefix length; also used as the guest's prefix length in the network push |
+| `vm_migrate_phpipam_section` | `Lab` | For the phpIPAM phase | Existing phpIPAM section name |
+| `vm_migrate_foreman_subnet` | `Lab` | For the Foreman phase | Existing Foreman subnet name; check with `GET /api/subnets` |
+| `vm_migrate_proxmox_bridge` | `vmbr0` | For the Proxmox NIC phase | Bridge to attach the NIC to |
+| `vm_migrate_proxmox_interface` | `net0` | No | NIC slot; override for multi-NIC VMs |
+| `vm_migrate_proxmox_vlan_tag` | unset | No | VLAN tag; omit for an untagged bridge |
+| `vm_migrate_guest_network_push` | unset (commented `true`) | No | Opt in to pushing the new IP into the guest with `nmcli` over the QEMU guest agent (no SSH), after the NIC phase. A mistake can strand the VM with only the Proxmox console, so it is never implied by `vm_migrate_new_ip`; see **Guest-side network push** |
+| `vm_migrate_guest_os_family` | unset (`Debian` or `RedHat`) | If `vm_migrate_guest_network_push` | Must match `ansible_facts['os_family']` spelling exactly; the playbook never gathers facts |
+| `vm_migrate_new_gateway` | `10.0.0.1` | If `vm_migrate_guest_network_push` | Guest gateway |
+| `vm_migrate_new_dns` | `[10.0.0.53]` | If `vm_migrate_guest_network_push` | Guest DNS servers |
+| `vm_migrate_new_dns_search` | `[domain]` | No | DNS search domains; defaults to `domain` so short hostnames resolve |
+| `vm_migrate_guest_connection_name` | auto-detected | No | `nmcli` connection to modify; needed only when the guest has more than one active connection |
 
 ---
 

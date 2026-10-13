@@ -22,7 +22,7 @@
 #
 # STATUS (2026-09-28): phpIPAM, Foreman, Proxmox NIC, and the guest-side
 # network push are all wired. The guest push (via
-# mgcdrd.infrabase.proxmox_guest_exec) uses nmcli for both Debian and
+# mgcdrd.proxmox.proxmox_guest_exec) uses nmcli for both Debian and
 # RedHat guests -- nmcli is the only proven house idiom for this
 # (mgcdrd.infrabase.network_interfaces), netplan does not exist anywhere
 # in this repo. It's opt-in per host via vm_migrate_guest_network_push,
@@ -75,7 +75,7 @@
 
     - name: vm-migrate - change Proxmox NIC bridge/VLAN
       ansible.builtin.import_role:
-        name: mgcdrd.infrabase.proxmox_nic
+        name: mgcdrd.proxmox.proxmox_nic
       vars:
         proxmox_api_host:    "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_nic_vm_name: "{{ inventory_hostname }}"
@@ -161,7 +161,7 @@
 
     - name: vm-migrate - install NetworkManager on guest (Debian)
       ansible.builtin.import_role:
-        name: mgcdrd.infrabase.proxmox_guest_exec
+        name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
         proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
@@ -182,7 +182,7 @@
 
     - name: vm-migrate - let NetworkManager manage ifupdown-defined interfaces on guest (Debian)
       ansible.builtin.import_role:
-        name: mgcdrd.infrabase.proxmox_guest_exec
+        name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
         proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
@@ -202,7 +202,7 @@
 
     - name: vm-migrate - enable and start NetworkManager on guest (Debian)
       ansible.builtin.import_role:
-        name: mgcdrd.infrabase.proxmox_guest_exec
+        name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
         proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
@@ -225,7 +225,7 @@
 
     - name: vm-migrate - query guest's active nmcli connections
       ansible.builtin.import_role:
-        name: mgcdrd.infrabase.proxmox_guest_exec
+        name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
         proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
@@ -285,7 +285,7 @@
 
     - name: vm-migrate - push new IP config into guest via nmcli
       ansible.builtin.import_role:
-        name: mgcdrd.infrabase.proxmox_guest_exec
+        name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
         proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
@@ -313,7 +313,7 @@
 
     - name: vm-migrate - activate new IP config on guest
       ansible.builtin.import_role:
-        name: mgcdrd.infrabase.proxmox_guest_exec
+        name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
         proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"

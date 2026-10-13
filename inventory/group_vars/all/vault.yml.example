@@ -24,7 +24,7 @@ vm_migrate_foreman_password: "{{ lookup('community.hashi_vault.vault_kv2_get', v
 
 # ---- ProxMox ----
 # API TOKEN AUTH IS REQUIRED for this deployment, not just recommended —
-# the guest-agent-exec phase (mgcdrd.infrabase.proxmox_guest_exec) hard-
+# the guest-agent-exec phase (mgcdrd.proxmox.proxmox_guest_exec) hard-
 # asserts on it, since ansible.builtin.uri can't do PVE's login-ticket +
 # CSRF flow that password auth needs. Reuses the same
 # infra/<env>/proxmox/api_token secret deployments/proxmox-vm-manage's
