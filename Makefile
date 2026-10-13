@@ -31,7 +31,8 @@ setup: venv
 install: setup
 	$(ANSIBLE_GALAXY) collection install \
 		-r collections/requirements.yml \
-		-p collections
+		-p collections \
+		--force
 
 lint:
 	$(ANSIBLE_LINT)
