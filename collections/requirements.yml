@@ -3,12 +3,12 @@ collections:
   - name: mgcdrd.infrabase
     source: https://github.com/mgcdrd/infrabase.git
     type: git
-    version: v0.21.0
+    version: v0.24.0
 
   - name: mgcdrd.infrasvc
     source: https://github.com/mgcdrd/infrasvc.git
     type: git
-    version: v0.17.0
+    version: v0.18.0
 
   - name: theforeman.foreman
     version: ">=5.0.0"
