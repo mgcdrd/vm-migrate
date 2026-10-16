@@ -3,7 +3,7 @@ collections:
   - name: mgcdrd.infrabase
     source: https://github.com/mgcdrd/infrabase.git
     type: git
-    version: v0.24.0
+    version: v0.24.1
 
   - name: mgcdrd.infrasvc
     source: https://github.com/mgcdrd/infrasvc.git
