@@ -78,21 +78,20 @@ record before relying on that path alone. See
 
 ## Variable reference
 
-Host/group topology, `domain`, `vault_addr`, and `vault_kv_*` come from `../../inventory-common`. Shared settings go in `inventory/group_vars/all/env.yml` (copy of `env.yml.example`), secrets in `vault.yml` (copy of `vault.yml.example`), and the per-VM spec in `inventory/host_vars/<hostname>.yml` (copy of `example.yml.example`). Both real files are gitignored. Each phase in `site.yml` runs only when its trigger variable is set, so define only what a run needs.
+All variables live in the environment inventory (`inventory-common/lab` for the lab): the shared settings in `group_vars/all/vm_migrate.yml` and `group_vars/all/proxmox.yml`, and the per-VM spec in `host_vars/<hostname>/` (see `examples/host_vars/example.yml.example`). `domain`, `vault_addr`, and `vault_kv_*` come from `group_vars/all/all.yml`. Each phase in `site.yml` runs only when its trigger variable is set, so define only what a run needs.
 
-### Shared (`inventory/group_vars/all/env.yml`)
+### Shared (`group_vars/all/vm_migrate.yml`, `group_vars/all/proxmox.yml`)
 
 | Variable | Shipped value | Required | Description |
 |---|---|---|---|
 | `vm_migrate_phpipam_url` | `https://dns1.{{ domain }}` | Yes | phpIPAM URL; confirm it against your actual instance |
 | `vm_migrate_phpipam_app_id` | `ansible` | No | phpIPAM API application ID; it must exist under Administration > API first (see the `phpipam_config` role README) |
 | `vm_migrate_foreman_url` | `https://foreman.{{ domain }}` | Yes | Foreman URL |
-| `vm_migrate_pve_node` | `pve2` | Yes | PVE node whose API the run talks to; any node manages the whole cluster |
-| `proxmox_api_host` | set per task in `site.yml` from `vm_migrate_pve_node` | No | Shared connection variable every `proxmox_*` role reads |
+| `proxmox_api_host` | `pve2.example.com` | Yes | PVE node whose API the run talks to; any node manages the whole cluster |
 | `proxmox_api_user` | `root@pam` | Yes | API user; the collection has no default (mgcdrd.proxmox) |
 | `proxmox_validate_certs` | `false` | Yes | Validate the PVE API TLS certificate; the collection has no default |
 
-### Vault lookups (`inventory/group_vars/all/vault.yml.example`)
+### Vault lookups
 
 Set `VAULT_ADDR` and `VAULT_TOKEN` (or use AppRole) before running. These paths are new and may not be populated yet.
 
@@ -102,9 +101,9 @@ Set `VAULT_ADDR` and `VAULT_TOKEN` (or use AppRole) before running. These paths 
 | `vm_migrate_foreman_username`, `vm_migrate_foreman_password` | KV `<vault_kv_env>/foreman`, keys `write_username`/`write_password` | For the Foreman phase | Dedicated identity scoped to Hosts edit; not the read-only inventory identity and not an admin account |
 | `proxmox_api_token_id`, `proxmox_api_token_secret` | KV `<vault_kv_env>/proxmox/api_token` | Yes | API token (`VM.Config.Network` and `VM.Monitor` on the relevant path). Required, not just recommended: the guest-exec phase asserts on it, because `uri` cannot do PVE's ticket and CSRF login |
 
-### Per VM (`inventory/host_vars/<hostname>.yml`)
+### Per VM (`host_vars/<hostname>/`)
 
-Run with `ansible-playbook site.yml --limit <hostname>`; the hostname must match `inventory-common/hosts.yml`.
+Run with `ansible-playbook site.yml --limit <hostname>`; the hostname must match the environment's `hosts.yml`.
 
 | Variable | Shipped value | Required | Description |
 |---|---|---|---|
@@ -129,16 +128,10 @@ Run with `ansible-playbook site.yml --limit <hostname>`; the hostname must match
 
 ```bash
 ansible-galaxy collection install -r collections/requirements.yml
-cp inventory/group_vars/all/env.yml.example inventory/group_vars/all/env.yml
-cp inventory/group_vars/all/vault.yml.example inventory/group_vars/all/vault.yml
-cp inventory/host_vars/example.yml.example inventory/host_vars/<hostname>.yml
-# edit both for your environment, then:
+cp examples/host_vars/example.yml.example ../../inventory-common/lab/host_vars/<hostname>/vm_migrate.yml
+# edit it for the VM, then:
 ansible-playbook site.yml --limit <hostname>
 ```
-
-If the VM lives in an `inventory-common/instances/` directory (a k8s node, for
-example), run `source ../../inventory-common/fleet-env.sh` first — otherwise
-`--limit <hostname>` matches nothing.
 
 Each phase in `site.yml` only runs if its trigger var
 (`vm_migrate_new_ip`, `vm_migrate_proxmox_bridge`,
@@ -170,7 +163,7 @@ Requires, in that VM's host_vars, alongside `vm_migrate_new_ip`:
 - `vm_migrate_new_gateway`, `vm_migrate_new_dns` (list). The guest's IPv4
   prefix length reuses `vm_migrate_phpipam_subnet_mask`.
 - `vm_migrate_new_dns_search` (list, optional) — DNS search domain(s).
-  Defaults to `[domain]` (`inventory-common`'s env-wide domain) if unset,
+  Defaults to `[domain]` (the environment's `group_vars/all/all.yml`) if unset,
   so a short hostname like `foreman` still resolves.
 - `vm_migrate_guest_connection_name` (optional) — only needed if the
   guest has more than one active `nmcli` connection at push time.
@@ -204,7 +197,7 @@ console step — same fallback as before this phase existed.
 ## Vault
 
 New credential paths, none populated yet as of 2026-09-02 — see
-`inventory/group_vars/all/vault.yml.example` for the full lookup and what
+`group_vars/all/vm_migrate.yml` and `group_vars/all/proxmox.yml` in the environment inventory for the full lookup and what
 each one needs:
 
 - `infra/<env>/phpipam/api` — dedicated phpIPAM API user (`username`,
@@ -222,8 +215,8 @@ each one needs:
 ## Client/customer delivery
 
 Same shape as every other deployment here: point `ansible.cfg`'s
-inventory path at the customer's own `inventory-<client>` repo, swap
-`inventory/` overrides for their environment. The Compute-Resource
+inventory path at the customer's own `inventory-<client>` environment and
+set their values in its `group_vars/all/`. The Compute-Resource
 caveat above is the one thing worth re-checking per engagement — a
 customer whose Foreman does own VM provisioning may get more out of
 `foreman_host_network`'s `vlan_tag` field than this lab currently does.

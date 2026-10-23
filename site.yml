@@ -11,7 +11,7 @@
 # Ad hoc, one VM per run:
 #   ansible-playbook site.yml --limit <hostname>
 #
-# Define vm_migrate_* for the VM in inventory/host_vars/<hostname>.yml
+# Define vm_migrate_* for the VM in host_vars/<hostname>/ in the environment inventory
 # (see host_vars/example.yml.example), or pass via -e for a one-off run.
 # Each phase only runs if its trigger var is set -- an unscoped run is a
 # no-op everywhere except a host that actually defines vm_migrate_new_ip.
@@ -77,7 +77,6 @@
       ansible.builtin.import_role:
         name: mgcdrd.proxmox.proxmox_nic
       vars:
-        proxmox_api_host:    "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_nic_vm_name: "{{ inventory_hostname }}"
         proxmox_nic_interfaces:
           - interface: "{{ vm_migrate_proxmox_interface | default('net0') }}"
@@ -114,7 +113,7 @@
 
     - name: vm-migrate - look up guest VMID/node once for the guest-exec phase
       community.proxmox.proxmox_vm_info:
-        api_host:         "{{ vm_migrate_pve_node }}.{{ domain }}"
+        api_host:         "{{ proxmox_api_host }}"
         api_user:         "{{ proxmox_api_user }}"
         api_password:     "{{ proxmox_api_password | default(omit) }}"
         api_token_id:     "{{ proxmox_api_token_id | default(omit) }}"
@@ -163,7 +162,6 @@
       ansible.builtin.import_role:
         name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
-        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
         proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
         proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
@@ -184,7 +182,6 @@
       ansible.builtin.import_role:
         name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
-        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
         proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
         proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
@@ -204,7 +201,6 @@
       ansible.builtin.import_role:
         name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
-        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
         proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
         proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
@@ -227,7 +223,6 @@
       ansible.builtin.import_role:
         name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
-        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
         proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
         proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
@@ -287,7 +282,6 @@
       ansible.builtin.import_role:
         name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
-        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
         proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
         proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"
@@ -315,7 +309,6 @@
       ansible.builtin.import_role:
         name: mgcdrd.proxmox.proxmox_guest_exec
       vars:
-        proxmox_api_host:          "{{ vm_migrate_pve_node }}.{{ domain }}"
         proxmox_guest_exec_vm_name: "{{ inventory_hostname }}"
         proxmox_guest_exec_vmid:    "{{ vm_migrate_guest_vmid }}"
         proxmox_guest_exec_node:    "{{ vm_migrate_guest_node }}"

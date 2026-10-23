@@ -1,5 +1,5 @@
 ---
-# Copy to inventory/host_vars/<hostname>.yml (matching the hostname as
+# Copy to host_vars/<hostname>/ in the environment inventory (matching the hostname as
 # defined in ../../../../inventory-common/hosts.yml) to migrate that VM.
 #
 # Run:
