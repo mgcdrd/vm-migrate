@@ -11,6 +11,12 @@
 # ---- phpIPAM + Foreman phases (both gated on this) ----
 vm_migrate_new_ip: 10.0.0.50
 
+# Optional opt-outs, both default true. Set false for a guest-only IP
+# change (with vm_migrate_guest_network_push below); the skipped system's
+# record is then left stale.
+# vm_migrate_phpipam_enabled: false
+# vm_migrate_foreman_enabled: false
+
 # phpIPAM target subnet — must already exist in phpIPAM (this deployment
 # only ever assigns an address into an existing subnet, never creates
 # the production subnet itself).

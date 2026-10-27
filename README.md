@@ -108,6 +108,8 @@ Run with `ansible-playbook site.yml --limit <hostname>`; the hostname must match
 | Variable | Shipped value | Required | Description |
 |---|---|---|---|
 | `vm_migrate_new_ip` | `10.0.0.50` | Yes | New IP; triggers the phpIPAM and Foreman phases |
+| `vm_migrate_phpipam_enabled` | unset (`true`) | No | Set `false` to skip the phpIPAM phase, e.g. for a guest-only IP change; the phpIPAM record is then left stale |
+| `vm_migrate_foreman_enabled` | unset (`true`) | No | Set `false` to skip the Foreman phase; the Foreman host record is then left stale |
 | `vm_migrate_phpipam_subnet_network` | `10.0.0.0` | For the phpIPAM phase | Network of the target phpIPAM subnet; it must already exist, this deployment only assigns an address into it |
 | `vm_migrate_phpipam_subnet_mask` | `25` | For the phpIPAM phase | Prefix length; also used as the guest's prefix length in the network push |
 | `vm_migrate_phpipam_section` | `Lab` | For the phpIPAM phase | Existing phpIPAM section name |

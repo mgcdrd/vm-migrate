@@ -42,7 +42,9 @@
     # delegate_to/when as task keywords there, so they sit on a block instead.
     - name: vm-migrate - assign IP in phpIPAM
       delegate_to: localhost
-      when: vm_migrate_new_ip is defined
+      when:
+        - vm_migrate_new_ip is defined
+        - vm_migrate_phpipam_enabled | default(true) | bool
       block:
         - name: vm-migrate - run phpipam_config
           ansible.builtin.include_role:
@@ -71,7 +73,9 @@
         foreman_host_network_host:     "{{ inventory_hostname }}"
         foreman_host_network_subnet:   "{{ vm_migrate_foreman_subnet }}"
         foreman_host_network_ip:       "{{ vm_migrate_new_ip }}"
-      when: vm_migrate_new_ip is defined
+      when:
+        - vm_migrate_new_ip is defined
+        - vm_migrate_foreman_enabled | default(true) | bool
 
     - name: vm-migrate - change Proxmox NIC bridge/VLAN
       ansible.builtin.import_role:
